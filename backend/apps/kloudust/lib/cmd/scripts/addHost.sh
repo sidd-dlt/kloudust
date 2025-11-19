@@ -170,6 +170,9 @@ if ! sudo virsh net-define /kloudust/temp/$DEFAULT_KD_NET.xml; then exitFailed; 
 if ! sudo virsh net-autostart $DEFAULT_KD_NET; then exitFailed; fi
 if ! sudo virsh net-start $DEFAULT_KD_NET; then exitFailed; fi
 
+cat > "/etc/udev/rules.d/99-kddefault_br.rules" <<EOF
+ACTION=="add", SUBSYSTEM=="net", NAME=="kddefault_br", RUN+="/usr/bin/systemctl restart nftables.service"
+EOF
 
 printf "\n\nSetting up the host firewall, packet forwarding and ARP proxy support\n"
 if ! sudo nft flush ruleset; then exitFailed; fi                                          # start with a new firewall
