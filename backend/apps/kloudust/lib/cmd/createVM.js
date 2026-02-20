@@ -34,8 +34,8 @@ module.exports.exec = async function(params) {
         force_overwrite, max_cores_s, max_memory_s, additional_params, vmtype_raw, no_qemu_agent_raw, 
         network_name_raw, hostname] = [...params];
     const vm_name = exports.resolveVMName(vm_name_raw), cores = parseInt(cores_s), memory = parseInt(memory_s), disk = parseInt(disk_s), 
-        max_cores = parseInt(max_cores_s||cores_s) > cores ? parseInt(max_cores_s||cores_s) : cores, 
-        max_memory = parseInt(max_memory_s||memory_s) > memory ? parseInt(max_memory_s||memory_s) : memory,
+        max_cores = parseInt(max_cores_s||cores_s) > cores ? parseInt(max_cores_s||cores_s) : cores * KLOUD_CONSTANTS.CONF.MAX_CORES_MULTIPLIER, 
+        max_memory = parseInt(max_memory_s||memory_s) > memory ? parseInt(max_memory_s||memory_s) : memory * KLOUD_CONSTANTS.CONF.MAX_MEMORY_MULTIPLIER,
         no_qemu_agent = no_qemu_agent_raw?.toLowerCase() == "true" ? "true" : "false", vmtype = vmtype_raw||exports.VM_TYPE_VM,
         kvm_network_name = roleman.isCloudAdminLoggedIn() ? network_name_raw||vnet.KD_DEFAULT_HOST_NETWORK:vnet.KD_DEFAULT_HOST_NETWORK;
 
@@ -72,7 +72,7 @@ module.exports.exec = async function(params) {
             hostInfo.hostaddress, hostInfo.rootid, hostInfo.rootpw, hostInfo.hostkey, hostInfo.port,
             `${KLOUD_CONSTANTS.LIBDIR}/cmd/scripts/createVM.sh`,
             vm_name, vm_description, cores, memory, disk, creation_image_name, kdResource.uri, ostype, 
-            fromCloudImg, cloudinit_data||"undefined", KLOUD_CONSTANTS.env.org, KLOUD_CONSTANTS.env.prj,
+            fromCloudImg, cloudinit_data||"undefined", KLOUD_CONSTANTS.env.org(), KLOUD_CONSTANTS.env.prj(),
             force_overwrite||"false", max_cores, max_memory, additional_params, no_qemu_agent, kvm_network_name
         ]
     }
@@ -102,6 +102,6 @@ module.exports.exec = async function(params) {
 }
 
 /** @return The internal VM name for the given raw VM name or null on error */
-exports.resolveVMName = vm_name_raw => vm_name_raw?`${vm_name_raw}_${KLOUD_CONSTANTS.env.org}_${KLOUD_CONSTANTS.env.prj}`.toLowerCase().replace(/\s/g,"_"):null;
+exports.resolveVMName = vm_name_raw => vm_name_raw?`${vm_name_raw}_${KLOUD_CONSTANTS.env.org()}_${KLOUD_CONSTANTS.env.prj()}`.toLowerCase().replace(/\s/g,"_"):null;
 exports.DEFAULT_DISK = "__org_kloudust_default_disk_name";
 exports.VM_TYPE_VM = "vm";
