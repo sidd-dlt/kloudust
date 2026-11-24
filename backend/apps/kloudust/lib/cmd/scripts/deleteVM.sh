@@ -23,7 +23,7 @@ fi
 
 printf "WARNING!! VM $NAME will be deleted permanently at the end of this operation.\n"
 
-VM_DISKS=(`virsh dumpxml $NAME | grep -oP "source\sfile=\s*'\K\/kloudust\/disks\/$NAME.+?(?=')"`)
+VM_DISKS=(`virsh dumpxml $NAME | grep -oP "source\sfile=\s*'\K\/kloudust\/(shared\/)?disks\/$NAME.+?(?=')"`)
 if [ -z $VM_DISKS ]; then
     echo Error!! Unable to find VM disk. 
     exitFailed

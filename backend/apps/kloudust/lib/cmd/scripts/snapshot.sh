@@ -44,7 +44,7 @@ printf "\n\nCopying disks to the snapshot\n"
 FAILED=0
 while read T F; do
     S=/kloudust/snapshots/$VM_NAME.$SNAPSHOT_NAME.`basename ${F%.*}`.qcow2
-    if [[ $F == /kloudust/disks/$VM_NAME.* ]]; then S=/kloudust/snapshots/$VM_NAME.$SNAPSHOT_NAME.disk.qcow2; fi
+    if [[ $F == /kloudust/disks/$VM_NAME.* ]] || [[ $F == /kloudust/shared/disks/$VM_NAME.* ]]; then S=/kloudust/snapshots/$VM_NAME.$SNAPSHOT_NAME.disk.qcow2; fi
     echo Copying $F to $S
     if [ $FAILED == 0 ] && ! qemu-img convert -U -O qcow2 $F $S; then FAILED=1; sudo rm -f $S; fi
     if [ "$STATE" != "shut off" ]; then

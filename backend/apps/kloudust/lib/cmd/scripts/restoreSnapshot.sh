@@ -67,7 +67,8 @@ fi
 
 TIMESTAMP=`date +%s%N | cut -b1-13`
 SNAPSHOT_DISK=/kloudust/snapshots/$VM_NAME.$SNAPSHOT_NAME.disk.qcow2
-OLD_DISK=`virsh domblklist $VM_NAME | awk -v p="/kloudust/disks/$VM_NAME." 'index($2,p)==1 {print $2; exit}'`
+OLD_DISK=`virsh domblklist $VM_NAME | awk -v p="/kloudust/disks/$VM_NAME." -v q="/kloudust/shared/disks/$VM_NAME." 'index($2,p)==1 || index($2,q)==1 {print $2; exit}'`
+OLD_DISK=${OLD_DISK/#\/kloudust\/shared\/disks\//\/kloudust\/disks\/}   # the saved config, edited below, uses /kloudust/disks
 DATA_DISKS=`ls /kloudust/snapshots/$VM_NAME.$SNAPSHOT_NAME.*.qcow2 | grep -vxF $SNAPSHOT_DISK | sed "s|^/kloudust/snapshots/$VM_NAME.$SNAPSHOT_NAME.||"`
 NEW_DISK=/kloudust/disks/$VM_NAME.qcow2
 

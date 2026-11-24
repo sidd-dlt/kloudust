@@ -35,7 +35,7 @@ function testDiskNameProvided() {
 
 function nextFreeDevice() {
     local XML=`virsh dumpxml $NAME`
-    local PREFIX=`echo "$XML" | grep -Pzo "<disk(.|\n)*?/kloudust/disks(.|\n)*?</disk>" | tr '\0' '\n' | grep -oP "<target.*?dev='\K[a-z][a-z]" | head -n1`
+    local PREFIX=`echo "$XML" | grep -Pzo "<disk(.|\n)*?/kloudust/(shared/)?disks(.|\n)*?</disk>" | tr '\0' '\n' | grep -oP "<target.*?dev='\K[a-z][a-z]" | head -n1`
     local USED=`echo "$XML" | grep -Pzo "<disk(.|\n)*?</disk>" | tr '\0' '\n' | grep -oP "<target.*?dev='\K\w+"`
     if [ -z "$PREFIX" ]; then return; fi
     for L in {a..z}; do grep -qx "$PREFIX$L" <<< "$USED" || { echo "$PREFIX$L"; return; }; done
@@ -139,7 +139,8 @@ if [ "$INPLACE_DISK_RESIZE" == "true" ]; then
         EXPECTED_DISK=/kloudust/disks/"$NAME".qcow2
     fi
     # look the disk up in the live domain XML so we only resize a disk actually attached to the VM
-    VM_DISK=`virsh dumpxml $NAME | grep -oP "source\s+file='\K[^']+" | grep -Fx "$EXPECTED_DISK"`
+    # compare resolved paths, a VM moved live to shared storage shows /kloudust/shared/disks until it restarts
+    VM_DISK=`virsh dumpxml $NAME | grep -oP "source\s+file='\K[^']+" | while read F; do [ "\`readlink -f "$F"\`" == "\`readlink -f "$EXPECTED_DISK"\`" ] && echo "$F"; done`
     if [ -z "$VM_DISK" ]; then
         echo Error!! Disk $EXPECTED_DISK is not attached to $NAME.
         exitFailed
