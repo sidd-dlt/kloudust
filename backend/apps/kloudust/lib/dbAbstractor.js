@@ -81,8 +81,44 @@ exports.addHostToDB = async (hostname, hostaddress, type, rootid, rootpw, hostke
 exports.deleteHostFromDB = async (hostname) => {
     if (!roleman.checkAccess(roleman.ACTIONS.edit_cloud_resource)) {_logUnauthorized(); return false; }
 
+    await _db().runCmd("delete from hoststorage where hostname = ? collate nocase", [hostname]); // result ignored, host may have no storage
     const query = "delete from hosts where hostname = ? collate nocase";
     return await _db().runCmd(query, [hostname]);
+}
+
+/**
+ * Adds or replaces the shared storage (NAS) entry for the given host. Only cloud admin can do this.
+ * @param {string} hostname The hostname
+ * @param {string} type The storage type - nfs or cifs
+ * @param {string} address The storage server IP or DNS
+ * @param {string} path The export path (NFS) or share name (CIFS)
+ * @param {string} userid The storage login ID (CIFS only)
+ * @param {string} password The storage password (CIFS only), stored encrypted
+ * @param {number} disk Optional, the storage size in bytes, saved as the host's disk size as its VMs now use the storage
+ * @return true on success or false otherwise
+ */
+exports.addHostStorageToDB = async (hostname, type, address, path, userid, password, disk) => {
+    if (!roleman.checkAccess(roleman.ACTIONS.edit_cloud_resource)) {_logUnauthorized(); return false;}
+
+    if (disk && !await _db().runCmd("update hosts set disk = ? where hostname = ? collate nocase", [disk, hostname])) return false;
+
+    const query = "replace into hoststorage(hostname, type, address, path, userid, password) values (?,?,?,?,?,?)";
+    return await _db().runCmd(query, [hostname, type, address, path, userid||"", password ? crypt.encrypt(password) : ""]);
+}
+
+/**
+ * Returns the shared storage (NAS) entry for the given host.
+ * @param {string} hostname The hostname
+ * @return {hostname, type, address, path, userid, password} or null if the host has no shared storage
+ */
+exports.getHostStorage = async hostname => {
+    if (!roleman.checkAccess(roleman.ACTIONS.lookup_cloud_resource_for_project)) {_logUnauthorized(); return false; }
+
+    const storage = await _db().getQuery("select * from hoststorage where hostname = ? collate nocase", hostname);
+    if (!storage || !storage.length) return null;
+
+    if (storage[0].password) storage[0].password = crypt.decrypt(storage[0].password);
+    return storage[0];
 }
 
 /**
@@ -323,6 +359,11 @@ exports.getAvailableHosts = async (vcpu, ram, disk, arch, factors) => {
     const org = roleman.getCurrentOrg(); 
     const isOrgUsingReservedHosts = await _db().getQuery('select count(*) as count from hosts where org = ? collate nocase', [org]);
     const orgMatch = isOrgUsingReservedHosts[0].count ? org : '*';
+    // hosts on the shared storage share its space, so count the disks of the VMs on all of them
+    const sharedHosts = await _db().getQuery("select hostname from hoststorage", []);    // false on DBs without the table
+    const usedDiskSQL = sharedHosts && sharedHosts.length ? `CASE WHEN h.hostname IN (SELECT hostname FROM hoststorage)
+        THEN (SELECT IFNULL(SUM(disk), 0) FROM vms WHERE hostname IN (SELECT hostname FROM hoststorage)) ELSE IFNULL(SUM(v.disk), 0) END` :
+        "IFNULL(SUM(v.disk), 0)";
 
     const query = `
         WITH host_usage AS (
@@ -333,7 +374,7 @@ exports.getAvailableHosts = async (vcpu, ram, disk, arch, factors) => {
                 h.disk                                      AS total_disk,
                 IFNULL(SUM(v.cpus), 0)                      AS used_cpu,
                 IFNULL(SUM(v.memory), 0)                    AS used_ram,
-                IFNULL(SUM(v.disk), 0)                      AS used_disk
+                ${usedDiskSQL}                      AS used_disk
             FROM hosts h
             LEFT JOIN vms v ON v.hostname = h.hostname
             WHERE h.processorarchitecture = ?

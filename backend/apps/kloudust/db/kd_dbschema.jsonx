@@ -38,6 +38,11 @@
         timestamp integer default (cast(strftime('%s','now') || substr(strftime('%f','now'),4) as integer)), \
         org varchar default '*', projectid varchar default '*')",
 
+    // shared storage (NAS) mounted at /kloudust/shared on a host, all hosts mount the same storage
+    "CREATE TABLE hoststorage(hostname varchar not null primary key, type varchar not null, \
+        address varchar not null, path varchar not null, userid varchar, password varchar, \
+        timestamp integer default (cast(strftime('%s','now') || substr(strftime('%f','now'),4) as integer)))",
+
     // host resources container table
     "CREATE TABLE hostresources(name varchar not null primary key, uri varchar not null, \
         processorarchitecture varchar not null, description varchar, extrainfo varchar, \
