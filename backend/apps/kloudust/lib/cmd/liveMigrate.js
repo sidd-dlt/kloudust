@@ -90,14 +90,18 @@ module.exports.exec = async function(params) {
         }
 
         const execResult = await xforge(xforgeGuestExec);
+        // on shared storage both hosts see the same disks, so deleteVM on either host would recycle the only copy
+        const sharedStorage = (results.stdout||"").includes("KD_SHARED_STORAGE=true");
 
         if (!await dbAbstractor.updateVMHost(vm.id, hostToName)) {  // fix the DB, if failed give up
             params.consoleHandlers.LOGERROR(`DB failed but VM ${vm_name_raw} was migrated to ${hostToName}, aborting.`); 
-            if (!await deleteVM.deleteVMFromHost(vm_name, hostToInfo, params.consoleHandlers)) {   // cleanup new host in case of issues
+            if (sharedStorage) params.consoleHandlers.LOGERROR(`VM ${vm_name_raw} is left running on ${hostToName}, fix its host in the DB.`);
+            else if (!await deleteVM.deleteVMFromHost(vm_name, hostToInfo, params.consoleHandlers)) {   // cleanup new host in case of issues
                 params.consoleHandlers.LOGERROR(`Unable to delete the VM ${vm_name_raw} from the new host, cleanup failed.`);
             }
             return {...results, result: false}; 
-        } else if (!await deleteVM.deleteVMFromHost(vm_name, hostInfo, params.consoleHandlers)) {  // remove from old host
+        } else if (sharedStorage) return results;   // the old host's definition was removed by the migration itself
+        else if (!await deleteVM.deleteVMFromHost(vm_name, hostInfo, params.consoleHandlers)) {  // remove from old host
             params.consoleHandlers.LOGERROR(`Unable to delete the VM ${vm_name_raw} from the original host, leaving intact.`);
             if (!await deleteVM.deleteVMFromHost(vm_name, hostToInfo, params.consoleHandlers)) {   // cleanup new host in case of issues
                 params.consoleHandlers.LOGERROR(`Unable to delete the VM ${vm_name_raw} from the new host, cleanup failed.`);
@@ -105,4 +109,4 @@ module.exports.exec = async function(params) {
             return {...results, result: false}; 
         } else return results;
     } else return results;
-}
+}
