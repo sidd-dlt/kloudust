@@ -10,7 +10,9 @@
  *  speed in bytes per second, 11 - processor in Vendor:ProcessorFamily:Model format, 
  *  12 - processor architecture,  14 - number of sockets, 
  *  14 - optional - if set to nochange the host password is not changed
- *  15 - optional - encrypt inter-host traffic
+ *  15 - optional - encrypt inter-host traffic, 16 - optional - shared storage type (nfs, cifs or none),
+ *  17 - shared storage server IP or DNS, 18 - NFS export path or CIFS share name, 19 - CIFS user ID, 
+ *  20 - CIFS password
  * 
  * (C) 2020 TekMonks. All rights reserved.
  * License: See enclosed LICENSE file.
@@ -21,6 +23,7 @@ const roleman = require(`${KLOUD_CONSTANTS.LIBDIR}/roleenforcer.js`);
 const dbAbstractor = require(`${KLOUD_CONSTANTS.LIBDIR}/dbAbstractor.js`);
 const CMD_CONSTANTS = require(`${KLOUD_CONSTANTS.LIBDIR}/cmd/cmdconstants.js`);
 const xforge_module = require(`${KLOUD_CONSTANTS.THIRD_PARTY_DIR}/xforge/xforge`);
+const addHostStorage = require(`${KLOUD_CONSTANTS.LIBDIR}/cmd/addHostStorage.js`);
 
 /**
  * Initializes and adds the given machine to become a Kloudust hypervisor
@@ -32,7 +35,7 @@ module.exports.exec = async function(params) {
     if (!roleman.checkAccess(roleman.ACTIONS.edit_cloud_resource)) {params.consoleHandlers.LOGUNAUTH(); return CMD_CONSTANTS.FALSE_RESULT();}
 
     const [hostname, hostip, ostype, adminid, adminpass, hostsshkey, oldsshport_raw, cores, memory, disk, netspeed, 
-        processor, processorarchitecture, sockets, nochangepassword="", encrypt_inter_host_traffic=false] = [...params];
+        processor, processorarchitecture, sockets, nochangepassword="", encrypt_inter_host_traffic=false, nastype, nasaddress, naspath, nasuser, naspass] = [...params];
     const oldsshport = oldsshport_raw && oldsshport_raw.trim() != "" ? oldsshport_raw : 22;
     const newsshport = Math.floor(Math.random() * (KLOUD_CONSTANTS.CONF.SSH_RANGE.MAX - KLOUD_CONSTANTS.CONF.SSH_RANGE.MIN + 1) + KLOUD_CONSTANTS.CONF.SSH_RANGE.MIN);
 
@@ -49,6 +52,11 @@ module.exports.exec = async function(params) {
         const error = "INTER_HOST_TRAFFIC_PSK must be configured before enabling inter-host traffic encryption.";
         params.consoleHandlers.LOGERROR(error); return CMD_CONSTANTS.FALSE_RESULT(error);
     }
+    const storage = nastype && !["", "none"].includes(nastype.trim().toLowerCase()) ? 
+        addHostStorage.normalizeStorage(nastype, nasaddress, naspath, nasuser, naspass) : null;
+    const storageError = storage ? addHostStorage.validateStorage(storage) : undefined;
+    if (storageError) {params.consoleHandlers.LOGERROR(storageError); return CMD_CONSTANTS.FALSE_RESULT(storageError);}
+
     const newPassword = nochangepassword.toLowerCase() == "nochange" ? adminpass : cryptoMod.randomBytes(32).toString("hex");
     const agentconfig = xforge_module.getAgentConfig(hostip, adminid, newPassword, newsshport);
     const xforgeArgs = {
@@ -59,7 +67,8 @@ module.exports.exec = async function(params) {
             hostip, adminid, adminpass, hostsshkey, oldsshport,
             `${KLOUD_CONSTANTS.LIBDIR}/cmd/scripts/addHost.sh`,
             newPassword, CMD_CONSTANTS.SCRIPT_JSONOUT_SPLITTER, newsshport, agentconfig.port, vnet.KD_DEFAULT_HOST_NETWORK,
-            encryptInterHostTraffic, Buffer.from(KLOUD_CONSTANTS.CONF.INTER_HOST_TRAFFIC_PSK||"").toString("base64")
+            encryptInterHostTraffic, Buffer.from(KLOUD_CONSTANTS.CONF.INTER_HOST_TRAFFIC_PSK||"").toString("base64"),
+            storage ? "true" : "false"  // skip addHost.sh's reboot, the storage is set up first
         ],
         agent_config: agentconfig
     }
@@ -79,9 +88,18 @@ module.exports.exec = async function(params) {
 
         if (await dbAbstractor.addHostToDB(hostname, hostip, ostype.toLowerCase(), adminid, newPassword, 
             hostsshkey, newsshport, realCores, realMemory, realDisk, realNetspeed, realProcessor, 
-            realProcessorArchitecture, realSockets, encryptInterHostTraffic)) return {result: true, stdout: scriptOutChunks[0], 
-                out: scriptOutChunks[0], err: results.stderr, stderr: results.stderr}; 
-        else {
+            realProcessorArchitecture, realSockets, encryptInterHostTraffic)) {
+            let storageResults = {result: true};
+            if (storage) {  // addHost.sh skipped its reboot, mount the storage through the agent that is still running, then reboot
+                storageResults = await addHostStorage.addStorageToHost(hostname, hostip, adminid, newPassword, hostsshkey,
+                    newsshport, storage, params.consoleHandlers, agentconfig);
+                if (!storageResults.result) params.consoleHandlers.LOGERROR(
+                    `Host ${hostname} was added without its shared storage, fix the error and run Add shared storage.`);
+                await _rebootHost(hostip, adminid, newPassword, hostsshkey, newsshport, agentconfig, params.consoleHandlers);
+            }
+            return {result: storageResults.result, stdout: scriptOutChunks[0], out: scriptOutChunks[0], err: results.stderr, stderr: results.stderr};
+        } else {
+            if (storage) await _rebootHost(hostip, adminid, newPassword, hostsshkey, newsshport, agentconfig, params.consoleHandlers);  // addHost.sh skipped it
             _showError("Database error in adding the host.", hostip, newPassword, adminid, adminpass, oldsshport, newsshport, params.consoleHandlers||KLOUD_CONSTANTS.LOG); 
             return {result: false, stdout: scriptOutChunks[0], out: scriptOutChunks[0], err: results.stderr, stderr: results.stderr};
         }
@@ -94,4 +112,11 @@ function _showError(message, hostip, newPassword, userid, oldPassword, oldsshpor
     consoleHandlers.LOGERROR(`${message}. Host: ${hostip}`);
     consoleHandlers.LOGERROR(`Host ${hostip} initialization failed. Password and SSH ports may be changed.`);
     consoleHandlers.LOGERROR(`Login password for ${hostip} and user ${userid} is one of these now: ${oldPassword} or ${newPassword}. Further the SSH port is either ${oldsshport} or ${newsshport}.`);
+}
+
+/** Reboots the host through the given agent, addHost.sh skips its own reboot when the shared storage is set up after it */
+function _rebootHost(hostip, adminid, password, hostkey, port, agentconfig, consoleHandlers) {
+    return xforge_module.xforge({colors: KLOUD_CONSTANTS.COLORED_OUT, console: consoleHandlers, agent_config: agentconfig,
+        file: `${KLOUD_CONSTANTS.THIRD_PARTY_DIR}/xforge/samples/remoteCmd.xf.js`,
+        other: [hostip, adminid, password, hostkey, port, `${KLOUD_CONSTANTS.LIBDIR}/cmd/scripts/rebootHost.sh`]});
 }

@@ -6,6 +6,7 @@
 # {3} The new SSH port, defaults to 22 if not provided
 # {4} The agent port, defaults to 24 if not provided
 # {5} The default host network, defaults to kddefault if not provided
+# {8} true to skip the reboot at the end, addHost.js then sets up the shared storage and reboots
 
 NEW_PASSWORD="{1}"
 JSONOUT_SPLITTER="{2}"
@@ -17,10 +18,20 @@ DEFAULT_KD_NET_IN={5}
 DEFAULT_KD_NET=${DEFAULT_KD_NET_IN:-kddefault}
 DEFAULT_KD_NET_BRIDGE="${DEFAULT_KD_NET}_br"
 ENCRYPT_INTER_HOST_TRAFFIC={6}
+SKIP_REBOOT="{8}"
 
 function exitFailed() {
     echo Failed
     exit 1
+}
+
+# Points /kloudust/$1 to $2/$1. A real folder from an older Kloudust layout is left where it is, its VMs may be
+# running, "Add shared storage" moves it safely
+function linkDir() {
+    local LINK=/kloudust/$1 TARGET=$2/$1
+    if ! sudo mkdir -p $TARGET; then exitFailed; fi
+    if [ -d $LINK ] && [ ! -L $LINK ]; then return; fi
+    if ! sudo ln -sfn $TARGET $LINK; then exitFailed; fi
 }
 
 function printConfig() {
@@ -34,7 +45,7 @@ function printConfig() {
     PROCESSORARCH=`lscpu | grep 'Architecture:' | tr -s " " | cut -d":" -f2 | xargs`
     if [ "$PROCESSORARCH" == "x86_64" ]; then PROCESSORARCH=amd64; fi
     MEMORY=`free -b | grep "Mem:" | tr -s " " | cut -d" " -f2`
-    ROOTDISKTOTAL=`df -B1 /kloudust | tail -n+2 | tr -s " " | cut -d" " -f2`
+    ROOTDISKTOTAL=`df -B1 /kloudust/disks/ | tail -n+2 | tr -s " " | cut -d" " -f2`
     NETSPEED=$((1073741824*$(networkctl status `networkctl | grep routable | grep ether | head -n1 | xargs | cut -d" " -f2` | grep -i speed | xargs | cut -d" " -f2 | cut -d"G" -f1)))
     OSRELEASE=$(printf "$(cat /etc/issue)" | head -n1 | xargs)
 
@@ -71,7 +82,8 @@ if [ -f "`which yum`" ]; then
     if ! sudo yum -y install fail2ban; then exitFailed; fi
     if ! sudo yum -y install sshpass; then exitFailed; fi
     if ! sudo yum -y install jq; then exitFailed; fi
-    if ! sudo yum -y ipvsadm jq; then exitFailed; fi
+    if ! sudo yum -y install rsync nfs-utils cifs-utils; then exitFailed; fi
+    if ! sudo yum -y install ipvsadm jq; then exitFailed; fi
     if [ "$ENCRYPT_INTER_HOST_TRAFFIC" == "true" ] && ! sudo yum -y install strongswan; then exitFailed; fi
     if ! sudo yum -y install qemu-kvm libvirt virt-top bridge-utils libguestfs-tools virt-install tuned genisoimage; then exitFailed; fi
     if ! sudo yum -y install python3-websockify; then exitFailed; fi
@@ -83,6 +95,7 @@ else
     if ! yes | sudo DEBIAN_FRONTEND=noninteractive apt -qq -y install fail2ban; then exitFailed; fi
     if ! yes | sudo DEBIAN_FRONTEND=noninteractive apt -qq -y install sshpass; then exitFailed; fi
     if ! yes | sudo DEBIAN_FRONTEND=noninteractive apt -qq -y install jq; then exitFailed; fi
+    if ! yes | sudo DEBIAN_FRONTEND=noninteractive apt -qq -y install rsync nfs-common cifs-utils; then exitFailed; fi
     if ! yes | sudo DEBIAN_FRONTEND=noninteractive apt -qq -y install ipvsadm; then exitFailed; fi
     if [ "$ENCRYPT_INTER_HOST_TRAFFIC" == "true" ] && ! yes | sudo DEBIAN_FRONTEND=noninteractive apt -qq -y install strongswan; then exitFailed; fi
     if ! yes | sudo DEBIAN_FRONTEND=noninteractive apt -qq -y install net-tools iptables-persistent; then exitFailed; fi
@@ -124,6 +137,14 @@ if ! sudo systemctl enable --now tuned; then exitFailed; fi
 if ! sudo tuned-adm profile virtual-host; then exitFailed; fi
 
 
+printf "\n\nEnabling virtlockd so a VM disk can only be used by one running VM across all hosts\n"
+if ! sudo grep -qE '^\s*lock_manager\s*=\s*"lockd"' /etc/libvirt/qemu.conf; then
+    if ! echo 'lock_manager = "lockd"' | sudo tee -a /etc/libvirt/qemu.conf > /dev/null; then exitFailed; fi
+fi
+if ! sudo systemctl enable --now virtlockd.socket; then exitFailed; fi
+if ! sudo systemctl restart libvirtd; then exitFailed; fi
+
+
 printf "\n\nDisabling libvirt default networking\n"
 sudo virsh net-destroy default &> /dev/null
 sudo virsh net-autostart --network default --disable &> /dev/null
@@ -131,17 +152,16 @@ sudo virsh net-undefine default &> /dev/null
 
 
 printf "\n\nCreating Kloudust Structures\n"
-if ! sudo mkdir -p /kloudust/catalog/; then exitFailed; fi
-if ! sudo mkdir -p /kloudust/drivers/; then exitFailed; fi
-if ! sudo mkdir -p /kloudust/disks/; then exitFailed; fi
-if ! sudo mkdir -p /kloudust/metadata/; then exitFailed; fi
-if ! sudo mkdir -p /kloudust/snapshots/; then exitFailed; fi
-if ! sudo mkdir -p /kloudust/temp/; then exitFailed; fi
-if ! sudo mkdir -p /kloudust/recyclebin/; then exitFailed; fi
+# Resources a VM needs to run on any host live on the shared storage (setupSharedStorage.sh moves them there after
+# this script) or locally if there is none. Host specific resources are always local. /kloudust/<dir> is a symlink.
+SHARED_BASE=/kloudust/local
+if mountpoint -q /kloudust/shared; then SHARED_BASE=/kloudust/shared; fi
+SHARED_DIRS="catalog disks metadata snapshots recyclebin"
+for D in $SHARED_DIRS; do linkDir $D $SHARED_BASE; done
+for D in drivers temp system etc; do linkDir $D /kloudust/local; done
 if ! sudo mkdir -p /kloudust/system/hostinit; then exitFailed; fi
 if ! sudo mkdir -p /kloudust/system/vmhooks; then exitFailed; fi
 if ! sudo mkdir -p /kloudust/system/firewall; then exitFailed; fi
-if ! sudo mkdir -p /kloudust/etc/; then exitFailed; fi
 
 
 printf "\n\nDownloading additional drivers\n"
@@ -152,11 +172,10 @@ fi;
 
 
 printf "\n\nGiving permissions to Kloudust folders to KVM\n"
-if [ -f "`which yum`" ]; then 
-    if ! sudo chgrp -R qemu /kloudust/; then exitFailed; fi
-else 
-    if ! sudo chgrp -R libvirt /kloudust/; then exitFailed; fi
-fi
+if [ -f "`which yum`" ]; then KVM_GROUP=qemu; else KVM_GROUP=libvirt; fi
+if ! sudo chgrp $KVM_GROUP /kloudust/ || ! sudo chgrp -R $KVM_GROUP /kloudust/local/; then exitFailed; fi
+# not recursive on shared storage, the files there belong to all hosts
+for D in $SHARED_DIRS; do if ! sudo chgrp $KVM_GROUP $SHARED_BASE/$D; then exitFailed; fi; done
 
 
 printf "\n\nAdding the default Kloudust network\n"
@@ -341,5 +360,5 @@ if ! sudo systemctl daemon-reload; then exitFailed; fi
 
 printf "\n\nHost initialization finished successfully. Rebooting in 1 minutes.\n"
 printConfig $JSONOUT_SPLITTER
-sudo nohup shutdown -r +1 &>/dev/null &     # Background reboot
+if [ "$SKIP_REBOOT" != "true" ]; then sudo nohup shutdown -r +1 &>/dev/null & fi     # Background reboot
 exit 0
