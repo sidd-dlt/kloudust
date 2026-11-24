@@ -13,7 +13,10 @@ function exitFailed() {
 }
 
 printf "Adding image to catalog\n"
-if ! sudo bash -c "curl -L \"$URI\" > \"/kloudust/catalog/$CACHED_NAME\""; then exitFailed; fi
+# download aside then rename, the catalog may be shared and another host may be caching the same image
+TMP_NAME="/kloudust/catalog/$CACHED_NAME.kdtmp.$$"
+if ! sudo bash -c "curl -L \"$URI\" > \"$TMP_NAME\"" || ! sudo mv -f "$TMP_NAME" "/kloudust/catalog/$CACHED_NAME"; then
+    sudo rm -f "$TMP_NAME"; exitFailed; fi
 if ! sudo ls -al "/kloudust/catalog/$CACHED_NAME"; then exitFailed; fi
 
 

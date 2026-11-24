@@ -11,7 +11,7 @@ function exitFailed() {
 }
 
 printf "Deleting image from the catalog\n"
-if ! sudo rm "/kloudust/catalog/$CACHED_NAME"; then exitFailed; fi
+if ! sudo rm -f "/kloudust/catalog/$CACHED_NAME"; then exitFailed; fi    # -f: on shared storage another host deleted it already
 
 printf "\n\nImage deleted successfully\n"
 exit 0

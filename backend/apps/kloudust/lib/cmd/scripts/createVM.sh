@@ -98,7 +98,9 @@ if [ "$DONT_CACHE_IMAGE" == "true" ]; then
     if ! curl $INSTALL_URI > "$INSTALL_PATH"; then exitFailed; fi
 elif [ ! -f "$INSTALL_PATH" ]; then
     printf "VM install disk not found cached locally. Downloading first.\n"
-    if ! curl $INSTALL_URI > "$INSTALL_PATH"; then exitFailed; fi
+    # download aside then rename, the catalog may be shared and another host may be caching the same image
+    if ! curl $INSTALL_URI > "$INSTALL_PATH.kdtmp.$$" || ! mv -f "$INSTALL_PATH.kdtmp.$$" "$INSTALL_PATH"; then
+        rm -f "$INSTALL_PATH.kdtmp.$$"; exitFailed; fi
 fi
 
 printf "Creating VM $NAME\n"
