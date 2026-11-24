@@ -1,0 +1,133 @@
+{
+    "id": "addhoststorage",
+    "command": "addHostStorage",
+    "type": "kloudust_cmdline",
+    "kloudust_cmdline_params": [
+        "hostname",
+        "nastype",
+        "nasaddress",
+        "naspath",
+        "nasuser",
+        "naspass"
+    ],
+    "title": "{{{i18n.AddStorageTitle}}}",
+    "i18n": {
+        "en": {
+            "AddStorageTitle": "Add shared storage",
+            "AddStorageDescription": "Mount the cloud's shared storage (NAS) on a host. VM disks, metadata, snapshots, images and the recycle bin move onto it, running VMs are moved live without downtime. All hosts must use the same storage.",
+            "Hostname": "Cloud name of the host",
+            "NASType": "Storage type",
+            "NASAddress": "Shared storage server IP or DNS",
+            "NASPath": "NFS export path or CIFS share name",
+            "NASUser": "CIFS user ID",
+            "NASPassword": "CIFS password",
+            "AddStorageSubmitLabel": "Add",
+            "FieldValidationErrorGeneric": "Validation error",
+            "Advanced": "Optional",
+            "Required": "Required"
+        },
+        "hi": {
+            "AddStorageTitle": "Add shared storage",
+            "AddStorageDescription": "Mount the cloud's shared storage (NAS) on a host. VM disks, metadata, snapshots, images and the recycle bin move onto it, running VMs are moved live without downtime. All hosts must use the same storage.",
+            "Hostname": "Cloud name of the host",
+            "NASType": "Storage type",
+            "NASAddress": "Shared storage server IP or DNS",
+            "NASPath": "NFS export path or CIFS share name",
+            "NASUser": "CIFS user ID",
+            "NASPassword": "CIFS password",
+            "AddStorageSubmitLabel": "Add",
+            "FieldValidationErrorGeneric": "Validation error",
+            "Advanced": "Optional",
+            "Required": "Required"
+        },
+        "ja": {
+            "AddStorageTitle": "Add shared storage",
+            "AddStorageDescription": "Mount the cloud's shared storage (NAS) on a host. VM disks, metadata, snapshots, images and the recycle bin move onto it, running VMs are moved live without downtime. All hosts must use the same storage.",
+            "Hostname": "Cloud name of the host",
+            "NASType": "Storage type",
+            "NASAddress": "Shared storage server IP or DNS",
+            "NASPath": "NFS export path or CIFS share name",
+            "NASUser": "CIFS user ID",
+            "NASPassword": "CIFS password",
+            "AddStorageSubmitLabel": "Add",
+            "FieldValidationErrorGeneric": "Validation error",
+            "Advanced": "Optional",
+            "Required": "Required"
+        },
+        "zh": {
+            "AddStorageTitle": "Add shared storage",
+            "AddStorageDescription": "Mount the cloud's shared storage (NAS) on a host. VM disks, metadata, snapshots, images and the recycle bin move onto it, running VMs are moved live without downtime. All hosts must use the same storage.",
+            "Hostname": "Cloud name of the host",
+            "NASType": "Storage type",
+            "NASAddress": "Shared storage server IP or DNS",
+            "NASPath": "NFS export path or CIFS share name",
+            "NASUser": "CIFS user ID",
+            "NASPassword": "CIFS password",
+            "AddStorageSubmitLabel": "Add",
+            "FieldValidationErrorGeneric": "Validation error",
+            "Advanced": "Optional",
+            "Required": "Required"
+        }
+    },
+    "form": {
+        "description": "{{{i18n.AddStorageDescription}}}",
+        "required_label": "{{{i18n.Required}}}",
+        "required_fields": [
+            {
+                "id": "hostname",
+                "type": "text",
+                "placeholder": "{{{i18n.Hostname}}}",
+                "required": true,
+                "pattern": "\\s*[A-Za-z0-9]+\\s*",
+                "validation_error": "{{{i18n.FieldValidationErrorGeneric}}}"
+            },
+            {
+                "id": "nastype",
+                "multioption": true,
+                "type": "select",
+                "label": "{{{i18n.NASType}}}",
+                "options": [
+                    {
+                        "value": "nfs",
+                        "label": "NFS"
+                    },
+                    {
+                        "value": "cifs",
+                        "label": "CIFS / SMB"
+                    }
+                ]
+            },
+            {
+                "id": "nasaddress",
+                "type": "text",
+                "placeholder": "{{{i18n.NASAddress}}}",
+                "required": true,
+                "pattern": "\\s*[A-Za-z0-9\\.\\-]+\\s*",
+                "validation_error": "{{{i18n.FieldValidationErrorGeneric}}}"
+            },
+            {
+                "id": "naspath",
+                "type": "text",
+                "placeholder": "{{{i18n.NASPath}}}",
+                "required": true,
+                "pattern": "\\s*[A-Za-z0-9\\._/\\-]+\\s*",
+                "validation_error": "{{{i18n.FieldValidationErrorGeneric}}}"
+            }
+        ],
+        "optional_label": "{{{i18n.Advanced}}}",
+        "optional_fields": [
+            {
+                "id": "nasuser",
+                "type": "text",
+                "placeholder": "{{{i18n.NASUser}}}",
+                "pattern": "\\s*[A-Za-z0-9\\._@\\-]+\\s*"
+            },
+            {
+                "id": "naspass",
+                "type": "password",
+                "placeholder": "{{{i18n.NASPassword}}}"
+            }
+        ],
+        "submitlabel": "{{{i18n.AddStorageSubmitLabel}}}"
+    }
+}
