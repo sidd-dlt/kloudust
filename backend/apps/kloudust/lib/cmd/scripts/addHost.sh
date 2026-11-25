@@ -357,6 +357,11 @@ if ! sudo sed -i 's/^#\?[ ]*[Pp]ort[ ]\+[0-9]\+[ ]*$//g' /etc/ssh/sshd_config; t
 if ! echo "Port $NEW_SSH_PORT" | sudo tee -a /etc/ssh/sshd_config > /dev/null; then exitFailed; fi
 if ! touch ~/.hushlogin; then exitFailed; fi
 if ! sudo systemctl daemon-reload; then exitFailed; fi
+if [ "$SKIP_REBOOT" == "true" ]; then    # addHost.js sets up the shared storage over the new SSH port before the reboot
+    # Ubuntu 22.10+ listens through ssh.socket, restarting it rebinds the port, restarting ssh makes sshd take the new socket
+    if systemctl is-active --quiet ssh.socket; then SSH_UNITS="ssh.socket ssh"; elif [ -f "`which yum`" ]; then SSH_UNITS=sshd; else SSH_UNITS=ssh; fi
+    if ! sudo systemctl restart $SSH_UNITS; then exitFailed; fi    # open sessions survive, only the listener restarts
+fi
 
 printf "\n\nHost initialization finished successfully. Rebooting in 1 minutes.\n"
 printConfig $JSONOUT_SPLITTER
